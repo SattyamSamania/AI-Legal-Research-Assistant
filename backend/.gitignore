@@ -1,0 +1,48 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.db
+*.sqlite3
+
+# ---- Virtual Environment ----
+venv/
+env/
+ENV/
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+*.swp
+
+# ---- Logs ----
+logs/
+*.log
+
+# ---- Environment Variables ----
+.env
+.env.*
+
+# ---- OS Files ----
+.DS_Store
+Thumbs.db
+
+# ---- Data & Artifacts ----
+data/**/*.pdf
+data/**/*.txt
+data/**/*.json
+data/**/*.csv
+
+# If you want to keep CSV metadata, remove *.csv
+# data/processed/
+
+vector_store/
+models/
+outputs/
+
+# ---- Cache ----
+.cache/
+temp/
+tmp/

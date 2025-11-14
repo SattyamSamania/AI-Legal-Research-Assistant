@@ -1,0 +1,8 @@
+pdfplumber
+pydantic
+sentence_transformers
+faiss-cpu
+python-dotenv
+fastapi
+uvicorn
+langchain
