@@ -6,3 +6,11 @@ python-dotenv
 fastapi
 uvicorn
 langchain
+openai
+chromadb
+langchain
+langchain-community
+langchain-openai
+langchain-chroma 
+python-dotenv
+tqdm

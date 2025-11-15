@@ -31,7 +31,7 @@ These PDFs are the raw data source.
 
 ---
 
-## 2️⃣ Text Extraction
+## Text Extraction
 
 The script uses **pdfplumber** to extract text from each PDF:
 
@@ -43,7 +43,7 @@ This step converts unreadable PDFs → raw text.
 
 ---
 
-## 3️⃣ Text Cleaning
+## Text Cleaning
 
 Raw extracted text usually contains noise like:
 
@@ -71,7 +71,7 @@ These `.txt` files help verify extraction quality.
 
 ---
 
-## 4️⃣ Chunking (Preparing for RAG)
+## Chunking (Preparing for RAG)
 
 Large documents cannot be embedded directly.  
 The script splits each cleaned text into **smaller, meaningful chunks**.
@@ -85,7 +85,7 @@ Each chunk represents a self-contained piece of information suitable for retriev
 
 ---
 
-## 5️⃣ JSON Generation
+## JSON Generation
 
 All chunks are structured into a final JSON format:
 
@@ -108,3 +108,107 @@ backend/chunks/
     ├── case_laws.json
     └── government_regulations.json
 ```
+
+---
+
+## Loading Preprocessed Text Chunks
+
+We load already chunked legal text from:
+
+- Bare Acts
+
+- Case Laws
+
+- Government Regulations
+
+These are stored as .json files containing:
+
+```
+{
+  "text": "...chunk...",
+  "metadata": { "source_file": "...", "id": "...", "category": "..." }
+}
+```
+
+---
+
+## Embeddings Generation (OpenAI)
+
+We use:
+
+OpenAI Embeddings: text-embedding-3-small
+
+```
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+```
+
+Why this model?
+
+- Lightweight
+
+- Fast
+
+- Very cheap
+
+- High quality for semantic search
+
+---
+
+## Vector Store Setup, ChromaDB (new langchain-chroma package)
+
+Vectors + metadata stored in:
+
+```
+backend/vector_store/chroma/
+```
+
+Using:
+
+```
+from langchain_chroma import Chroma
+```
+
+Chroma automatically:
+
+- stores embeddings
+
+- persists database
+
+- reloads on next run
+
+## Query Testing
+
+`test_query.py` allows:
+
+- load vector DB
+
+- embed the query
+
+- perform similarity search
+
+- print retrieved chunks + metadata
+
+Output example:
+
+```
+Result #1
+Text: ....
+Metadata: { "source_file": "...", "category": "...", "id": "..." }
+```
+
+## Run embeddings generation
+
+`python backend/scripts/embed_data.py`
+
+Expected:
+
+```
+Total chunks: 3009
+Embeddings stored successfully in backend/vector_store/chroma/
+```
+
+## Run query test
+
+`python backend/scripts/test_query.py`
