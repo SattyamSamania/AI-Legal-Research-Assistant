@@ -11,10 +11,10 @@ db = Chroma(
     persist_directory=VECTOR_DB_DIR
 )
 
-query = "What licenses are required under the 2021 data protection regulations?"
+query = "Define electronic signature according to the IT Act."
 results = db.similarity_search(query, k=3)
 
-print("\n🔎 QUERY:", query)
+print("\n QUERY:", query)
 for i, r in enumerate(results):
     print("\n------------------------")
     print(f"Result #{i+1}")

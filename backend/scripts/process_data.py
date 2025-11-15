@@ -1,112 +1,146 @@
 import os
 import re
 import json
-from pathlib import Path
 import pdfplumber
-from typing import List, Dict
+from typing import List
 
 
-# 1. Extract Text From PDF
-
+# Extract text from PDF
 def extract_pdf_text(pdf_path: str) -> str:
     text = ""
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            text += page.extract_text() or ""
-            text += "\n\n"
+            extracted = page.extract_text() or ""
+            text += extracted + "\n"
     return text
 
 
-# 2. Clean & Normalize Text
-
+# Clean text (remove noise, footnotes)
 def clean_text(text: str) -> str:
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"Page \d+ of \d+", "", text)
-    text = re.sub(r"Page \d+", "", text)
+    text = re.sub(r"\s+", " ", text)                        # collapse whitespace
+    text = re.sub(r"\b\d+\.\s*Subs.*?\)", "", text)         # remove footnotes like "1. Subs. ..)"
     text = text.replace("-\n", "")
-    text = text.strip()
-    return text
+    return text.strip()
 
 
-# 3. Save Clean Text
+# Split BARE ACTS by numbered sections
+def split_sections_bare_act(text: str):
+    pattern = r"(?=\n?\s*\d+[A-Za-z]?\.\s)"  # e.g., 1. , 3A.
+    sections = re.split(pattern, text)
+    cleaned = []
 
-def save_clean_text(text: str, output_path: str):
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(text)
+    for sec in sections:
+        sec = sec.strip()
+        if len(sec) < 40:
+            continue
 
-
-# 4. Chunking (Legal-Aware)
-
-def chunk_text(text: str, min_size=600, max_size=1200) -> List[str]:
-    chunks = []
-    current = ""
-
-    sentences = re.split(r"(?<=[.?!])\s+", text)
-
-    for sentence in sentences:
-        if len(current) + len(sentence) < max_size:
-            current += " " + sentence
+        # Extract section number and title
+        match = re.match(r"(\d+[A-Za-z]?)\.\s*(.*)", sec)
+        if match:
+            sec_num = match.group(1)
+            sec_title = match.group(2).split(".")[0][:120]
         else:
-            chunks.append(current.strip())
-            current = sentence
+            sec_num = None
+            sec_title = None
 
-    if current:
-        chunks.append(current.strip())
+        cleaned.append({
+            "section_number": sec_num,
+            "section_title": sec_title,
+            "text": sec
+        })
+
+    return cleaned
+
+
+# Split CASE LAWS & REGULATIONS by uppercase headings
+def split_by_headings(text: str):
+    pattern = r"(?=\n[A-Z][A-Z\s]{4,}\n)"  # e.g., BACKGROUND, JUDGMENT
+    parts = re.split(pattern, text)
+
+    chunks = []
+    for part in parts:
+        part = part.strip()
+        if len(part) < 60:
+            continue
+        chunks.append({
+            "section_number": None,
+            "section_title": part.split("\n")[0][:120],
+            "text": part
+        })
 
     return chunks
 
 
-# 5. Process One Category (bare_acts/case_laws/etc)
+# Chunk into smaller 1.8k char chunks
+def chunk_text(text: str, max_chars=1800):
+    sentences = re.split(r"(?<=[.?!])\s", text)
+    result = []
 
+    current = ""
+    for s in sentences:
+        if len(current) + len(s) <= max_chars:
+            current += " " + s
+        else:
+            result.append(current.strip())
+            current = s
+
+    if current:
+        result.append(current.strip())
+
+    return result
+
+
+# Process each category folder
 def process_category(category: str):
-    input_path = f"backend/data/{category}"
-    output_text_path = f"backend/processed/{category}"
-    output_chunk_file = f"backend/chunks/{category}.json"
-
-    all_chunks = []
-
-    for filename in os.listdir(input_path):
-        if filename.endswith(".pdf"):
-            pdf_path = os.path.join(input_path, filename)
-            print(f"Processing: {pdf_path}")
-
-            raw_text = extract_pdf_text(pdf_path)
-            clean = clean_text(raw_text)
-
-            # Save processed text
-            clean_file = os.path.join(output_text_path, filename.replace(".pdf", ".txt"))
-            save_clean_text(clean, clean_file)
-
-            # Chunk the text
-            chunks = chunk_text(clean)
-
-            # Save metadata for citations later
-            for idx, chunk in enumerate(chunks):
-                all_chunks.append({
-                    "id": f"{filename.replace('.pdf', '')}_chunk_{idx}",
-                    "text": chunk,
-                    "source_file": filename,
-                    "category": category
-                })
-
-    # Save chunks JSON
+    input_dir = f"backend/data/{category}"
+    output_file = f"backend/chunks/{category}.json"
     os.makedirs("backend/chunks/", exist_ok=True)
-    with open(output_chunk_file, "w", encoding="utf-8") as f:
-        json.dump(all_chunks, f, indent=2)
 
-    print(f"Completed category: {category}")
-    print(f"Saved chunks: {output_chunk_file}")
+    final_chunks = []
+
+    for file in os.listdir(input_dir):
+        if not file.endswith(".pdf"):
+            continue
+
+        pdf_path = os.path.join(input_dir, file)
+        print(f"Processing: {pdf_path}")
+
+        raw = extract_pdf_text(pdf_path)
+        clean = clean_text(raw)
+
+        if category == "bare_acts":
+            sections = split_sections_bare_act(clean)
+        else:
+            sections = split_by_headings(clean)
+
+        # Chunk each section
+        chunk_id = 0
+        for sec in sections:
+            small_chunks = chunk_text(sec["text"])
+            for ch in small_chunks:
+                final_chunks.append({
+                    "id": f"{file.replace('.pdf','')}_chunk_{chunk_id}",
+                    "text": ch,
+                    "source_file": file,
+                    "category": category,
+                    "section_number": sec["section_number"],
+                    "section_title": sec["section_title"]
+                })
+                chunk_id += 1
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(final_chunks, f, indent=2)
+
+    print(f"✔ Finished {category} | Total chunks: {len(final_chunks)}")
 
 
-# MAIN RUNNER
-
+# MAIN
 def main():
     categories = ["bare_acts", "case_laws", "government_regulations"]
     for cat in categories:
         process_category(cat)
 
-    print("\nData processing complete! All cleaned text + chunks generated.\n")
+    print("\n PHASE 2 COMPLETED — Clean chunks ready for embeddings!\n")
 
 
 if __name__ == "__main__":
